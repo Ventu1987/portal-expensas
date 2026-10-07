@@ -358,10 +358,11 @@ const lotesOf = id => n(C.P(id).Cantidad_Unidades) || n(bRow().Lotes);
 const catName = k => Plain.cat(k).nombre;
 const catColor = k => Plain.cat(k).color;
 
-/* ---------- Inflación ---------- */
-function ipcIdx() { const m = {}; (S().INDICES || []).forEach(r => { if (n(r.IPC_Indice)) m[String(r.Mes).slice(0, 7)] = n(r.IPC_Indice); }); return m; }
-function infl(a, b) { const I = ipcIdx(), ks = Object.keys(I).sort(); if (!ks.length) return null; const pk = m => I[m] ? m : ks.filter(k => k <= m).pop(); const x = pk(a), y = pk(b); if (!x || !y) return null; return { v: I[y] / I[x] - 1, hasta: y, parcial: y !== b || x !== a }; }
-function ipcUltVar() { const r = (S().INDICES || []).filter(r => n(r.IPC_Var_Mensual)).sort((a, b) => String(a.Mes).localeCompare(String(b.Mes))).pop(); return r ? { v: n(r.IPC_Var_Mensual), mes: String(r.Mes).slice(0, 7) } : null; }
+/* ---------- Inflación: solo como dato de referencia, no se compara con nada ---------- */
+function ipcRef(mes) {
+  const r = (S().INDICES || []).find(x => String(x.Mes).slice(0, 7) === mes);
+  return r && n(r.IPC_Var_Mensual) ? `Inflación de ${label(mes)} (INDEC): ${pct(n(r.IPC_Var_Mensual), false)}` : `Inflación de ${label(mes)} (INDEC): aún no publicada`;
+}
 
 /* ---------- Modelo ---------- */
 function coefLote(id) { const p = C.P(id), b = n(p.Base_Prorrateo_Ord), e = n(p.Expensa_Ord_Lote_Tipo); if (b && e) return e / b; const c = n(p.Coef_Lote_Tipo); return c ? (c > 1 ? c / 100 : c) : null; }
@@ -428,7 +429,7 @@ const ttMoney = { callbacks: { label: c => `${c.dataset.label}: ${m0(c.parsed.y)
 /* ---------- RESUMEN ---------- */
 function resumen() {
   const id = sel, M = modelo(id), d = M.lMod != null ? M.lRyM - M.lMod : null, rec = aRecuperar(), recT = rec.reduce((a, r) => a + r.monto, 0);
-  const sc = score(id), se = senales(id), ah = ahorrosInflacion(id).filter(x => x.exceso > 0), ahT = ah.reduce((a, x) => a + x.exceso, 0);
+  const sc = score(id), se = senales(id), nRev = se.length + (M.base - M.tg > 1000 ? 1 : 0), top = rubrosSuba(id)[0];
   after.push(() => mk("#chRes", { type: "bar", data: { labels: C.withSpend.map(short), datasets: [
     { label: "Lote común según RyM", data: C.withSpend.map(i => n(C.P(i).Expensa_Ord_Lote_Tipo)), backgroundColor: RYM, borderRadius: 6 },
     { label: "Lote común modelo (lo gastado)", data: C.withSpend.map(i => { const c = coefLote(i); return c ? C.totalGastos(i) * c : null; }), backgroundColor: MOD, borderRadius: 6 }] },
@@ -441,10 +442,11 @@ function resumen() {
     <div class="mod"><small>Liquidación modelo · lote común</small><b>${M.lMod != null ? money(M.lMod) : "N/D"}</b><p>${M.aj.length ? `Lo gastado, menos ${M.aj.length} ajuste${M.aj.length > 1 ? "s" : ""} reclamado${M.aj.length > 1 ? "s" : ""}` : "Prorrateando lo efectivamente gastado"}${M.rp ? `, más ${pctIn(M.rp)}% al fondo de reserva` : ""}.</p></div>
     <div class="dif"><small>Diferencia por lote común</small><b>${d != null ? sgn(d) : "N/D"}</b><p>${d != null && M.lRyM ? `${pct(d / M.lRyM, false)} de la expensa. ${d > 0 ? "RyM pide más que el modelo." : d < 0 ? "El modelo pide más (por el fondo de reserva)." : ""}` : ""}</p></div>
   </section>
+  <p class="fine">Referencia · ${esc(ipcRef(mesOf(id)))}</p>
   <section class="grid g4">
     <div class="kpi ${M.base - M.tg > 1000 ? "red" : "ok"}"><small>Pedido de más en el mes</small><b>${m0(M.base - M.tg)}</b><span>${m0(M.base)} pedidos vs ${m0(M.tg)} gastados</span></div>
     <div class="kpi ${recT ? "warn" : ""}"><small>Plata a reclamar</small><b>${m0(recT)}</b><span>${rec.length} reclamos con monto a favor del barrio</span></div>
-    <div class="kpi ${ahT ? "warn" : "ok"}"><small>Suba por encima de la inflación</small><b>${m0(ahT)} / mes</b><span>${ah.length} rubros subieron más que el IPC</span></div>
+    <div class="kpi ${nRev ? "warn" : "ok"}"><small>Puntos a revisar</small><b>${nRev}</b><span>${top && top.dif > 0 ? `El rubro que más subió: ${esc(catName(top.k))} (+${m0(top.dif)} desde ${esc(short(C.withSpend[0]))})` : "en la liquidación de este mes"}</span></div>
     <div class="kpi ${sc.ok / sc.tot >= .8 ? "ok" : sc.ok / sc.tot >= .5 ? "warn" : "red"}"><small>Estándar de transparencia</small><b>${sc.ok} de ${sc.tot}</b><span>criterios cumplidos este mes</span></div>
   </section>
   <section class="grid g2" style="margin-top:1rem">
@@ -553,11 +555,10 @@ function diferencias() {
 }
 
 /* ---------- AHORROS ---------- */
-function ahorrosInflacion(id) {
+function rubrosSuba(id) {
   const first = C.withSpend[0]; if (!first || first === id) return [];
-  const inf = infl(mesOf(first), mesOf(id)); if (!inf) return [];
   const cs = k => i => C.G(i).filter(g => g.Categoria === k).reduce((a, g) => a + n(g.Importe), 0);
-  return [...new Set(C.G(id).map(g => g.Categoria))].map(k => { const a = cs(k)(first), b = cs(k)(id); return { k, a, b, v: a ? b / a - 1 : null, inf, exceso: a ? b - a * (1 + inf.v) : 0 }; }).filter(x => x.a && x.b).sort((x, y) => y.exceso - x.exceso);
+  return [...new Set(C.G(id).map(g => g.Categoria))].map(k => { const a = cs(k)(first), b = cs(k)(id); return { k, a, b, v: a ? b / a - 1 : null, dif: b - a }; }).filter(x => x.a && x.b).sort((x, y) => y.dif - x.dif);
 }
 function comparacion(id) {
   const rows = S().COMPARATIVO_AUDITORIA || []; const meses = [...new Set(rows.map(r => r.Mes))].filter(m => m <= mesOf(id)).sort(); const mes = meses.pop(); if (!mes) return null;
@@ -570,7 +571,7 @@ function comparacion(id) {
 }
 let sim = {};
 function ahorros() {
-  const id = sel, M = modelo(id), inf = ahorrosInflacion(id), cmp = comparacion(id);
+  const id = sel, M = modelo(id), inf = rubrosSuba(id), cmp = comparacion(id);
   const mens = HS().filter(h => deBarrio(h) && !cerrado(h) && impacto(h) > 0 && /MENSUAL/.test(h.Recurrencia || "")).sort((a, b) => impacto(b) - impacto(a));
   const cats = [...new Set(C.G(id).map(g => g.Categoria))].map(k => ({ k, v: C.G(id).filter(g => g.Categoria === k).reduce((a, g) => a + n(g.Importe), 0) })).sort((a, b) => b.v - a.v);
   sim = JSON.parse(store.get("mod_sim") || "{}");
@@ -584,10 +585,10 @@ function ahorros() {
   <p class="fine">Aplica los porcentajes sobre el gasto de ${esc(label(id))}. ${tag("hip")}</p></div>
 
   <div class="grid g2">
-  <div class="card"><h3>Rubros que subieron más que la inflación</h3>
-    ${inf.length ? `<div class="tw"><table class="t"><thead><tr><th>Rubro</th><th class="r">Subió</th><th class="r">Inflación</th><th class="r">De más por mes</th></tr></thead><tbody>
-    ${inf.map(x => `<tr><td>${esc(catName(x.k))}</td><td class="r">${pct(x.v)}</td><td class="r">${pct(x.inf.v)}</td><td class="r ${x.exceso > 0 ? "pos" : "neg"}">${sgn(x.exceso)}</td></tr>`).join("")}</tbody></table></div>
-    <p class="fine">Desde ${esc(label(C.withSpend[0]))}. "De más" = gasto actual − gasto inicial ajustado por IPC${inf[0] && inf[0].inf.parcial ? ` (INDEC publicado hasta ${esc(label(inf[0].inf.hasta))})` : ""}. ${tag("calc")}</p>` : `<p class="empty">Hace falta más de un mes cargado.</p>`}</div>
+  <div class="card"><h3>Rubros que más aumentaron</h3>
+    ${inf.length ? `<div class="tw"><table class="t"><thead><tr><th>Rubro</th><th class="r">${esc(short(C.withSpend[0]))}</th><th class="r">${esc(short(id))}</th><th class="r">Variación</th><th class="r">Diferencia por mes</th></tr></thead><tbody>
+    ${inf.map(x => `<tr><td>${esc(catName(x.k))}</td><td class="r">${m0(x.a)}</td><td class="r">${m0(x.b)}</td><td class="r">${pct(x.v)}</td><td class="r ${cls(x.dif)}">${sgn(x.dif)}</td></tr>`).join("")}</tbody></table></div>
+    <p class="fine">Primer mes cargado contra ${esc(label(id))}. Los rubros que más subieron son los primeros a revisar o renegociar. ${tag("calc")}</p>` : `<p class="empty">Hace falta más de un mes cargado.</p>`}</div>
   <div class="card"><h3>Reclamos con impacto todos los meses</h3>
     ${mens.length ? `<ul class="list">${mens.map(h => `<li><div><b>${esc(h.Titulo)}</b><br><span class="fine">${esc(h.ID_Hallazgo)} · ${esc(String(h.Tipo_Impacto).toLowerCase())}${M.coef ? ` · ${m0(impacto(h) * M.coef)} por lote común` : ""}</span></div><span class="amt">${m0(impacto(h))}<br><span class="fine">por mes</span></span></li>`).join("")}</ul>` : `<p class="empty">Sin reclamos con impacto mensual.</p>`}
     <p class="fine">Montos de la auditoría para ${esc(bName())}; algunos son criterios en discusión. ${tag("hip")}</p></div>
@@ -609,7 +610,7 @@ function simUpdate() {
 /* ---------- PRESUPUESTO ---------- */
 function presupuesto() {
   const id = sel, ix = C.withSpend.indexOf(id), last = C.withSpend.slice(Math.max(0, ix - 2), ix + 1), M = modelo(id);
-  const uv = ipcUltVar(), infM = parsePct(store.get("mod_inf") ?? (uv ? pctIn(uv.v) : "2")), modo = store.get("mod_base") || "prom", rp = M.rp;
+  const infM = parsePct(store.get("mod_aum") ?? "0"), modo = store.get("mod_base") || "prom", rp = M.rp;
   const ids = modo === "ult" ? [id] : last;
   const cats = [...new Set(ids.flatMap(i => C.G(i).map(g => g.Categoria)))].map(k => ({ k, base: ids.reduce((a, i) => a + C.G(i).filter(g => g.Categoria === k).reduce((x, g) => x + n(g.Importe), 0), 0) / ids.length })).sort((a, b) => b.base - a.base);
   const base = cats.reduce((a, c) => a + c.base, 0);
@@ -624,13 +625,13 @@ function presupuesto() {
   <p class="lead">Una administración modelo presenta un presupuesto y después rinde cuentas contra él. Este es un punto de partida calculado con el gasto real; los supuestos se pueden cambiar.</p>
   <div class="card"><div class="bar">
     <label class="fld">Gasto base<select id="preBase"><option value="prom" ${modo === "prom" ? "selected" : ""}>Promedio de ${last.length} meses</option><option value="ult" ${modo === "ult" ? "selected" : ""}>Solo ${esc(label(id))}</option></select></label>
-    <label class="fld">Inflación mensual supuesta (%)<input id="preInf" inputmode="decimal" value="${pctIn(infM)}"></label>
+    <label class="fld">Aumento mensual estimado de los gastos (%)<input id="preInf" inputmode="decimal" value="${pctIn(infM)}"></label>
     <label class="fld">Fondo de reserva (%)<input id="resPct" inputmode="decimal" value="${pctIn(rp)}"></label></div>
-    <p class="fine">${uv ? `Última inflación mensual publicada por el INDEC: ${pct(uv.v, false)} (${esc(label(uv.mes))}).` : ""} Proyección ${tag("hip")}: no incluye aumentos de contratos ya pactados ni gastos extraordinarios.</p></div>
+    <p class="fine">Con 0% el presupuesto repite el gasto base todos los meses. Proyección ${tag("hip")}: no incluye aumentos de contratos ya pactados ni gastos extraordinarios.</p></div>
   <section class="grid g3">
     <div class="kpi"><small>Gasto mensual base</small><b>${m0(base)}</b><span>${modo === "prom" ? `promedio ${ids.map(short).join(", ")}` : label(id)}</span></div>
     <div class="kpi"><small>Presupuesto anual</small><b>${m0(anual)}</b><span>incluye ${pctIn(rp)}% de fondo de reserva</span></div>
-    <div class="kpi"><small>Lote común en 12 meses</small><b>${M.coef ? money((meses[11].g + meses[11].r) * M.coef) : "N/D"}</b><span>con ${pctIn(infM)}% mensual</span></div>
+    <div class="kpi"><small>Lote común en 12 meses</small><b>${M.coef ? money((meses[11].g + meses[11].r) * M.coef) : "N/D"}</b><span>${infM ? `con ${pctIn(infM)}% de aumento mensual` : "sin aumentos"}</span></div>
   </section>
   <div class="card" style="margin-top:1rem"><h3>Expensa del lote común: real y proyectada</h3><div class="chart"><canvas id="chPre"></canvas></div></div>
   <div class="grid g2">
@@ -686,7 +687,7 @@ function bind() {
   document.querySelectorAll("[data-aj]").forEach(c => c.onchange = () => { const st = ajState(sel); st[c.dataset.aj] = c.checked; store.set("mod_aj_" + barrio + sel, JSON.stringify(st)); keep(render); });
   const rp = $("#resPct"); if (rp) rp.onchange = () => { store.set("mod_reserva", rp.value); keep(render); };
   document.querySelectorAll("[data-res]").forEach(b => b.onclick = () => { store.set("mod_reserva", b.dataset.res); keep(render); });
-  const pi = $("#preInf"); if (pi) pi.onchange = () => { store.set("mod_inf", pi.value); keep(render); };
+  const pi = $("#preInf"); if (pi) pi.onchange = () => { store.set("mod_aum", pi.value); keep(render); };
   const pb = $("#preBase"); if (pb) pb.onchange = () => { store.set("mod_base", pb.value); keep(render); };
   const pr = $("#print"); if (pr) pr.onclick = () => { const t = document.title; document.title = `Liquidacion modelo ${bName()} ${label(sel)}`; window.print(); setTimeout(() => document.title = t, 1000); };
   document.querySelectorAll("[data-sim]").forEach(r => r.oninput = () => { sim[r.dataset.sim] = +r.value; store.set("mod_sim", JSON.stringify(sim)); const s = document.querySelector(`[data-sv="${CSS.escape(r.dataset.sim)}"]`); if (s) s.textContent = +r.value ? (r.value > 0 ? "+" : "") + r.value + "%" : "Sin cambio"; simUpdate(); });

@@ -185,6 +185,7 @@ dl{margin:.3rem 0 .6rem;font-size:.88rem}dt{color:var(--muted);margin-top:.4rem}
 .lead2{color:var(--muted);margin:.3rem 0 1rem;max-width:62ch}
 .pill{border-radius:999px;padding:.25rem .7rem;font-size:.8rem;font-weight:700}.pill.rojo{background:var(--red-soft);color:var(--red)}.pill.amarillo{background:var(--sun-soft);color:var(--sun)}
 .sem{display:inline-block;width:.62rem;height:.62rem;border-radius:999px;background:#CBD5E1;margin-right:.35rem;flex:none;vertical-align:baseline}
+.sem.neutro{display:none}.ipcref{margin-top:-.2rem}
 .sem.verde{background:var(--ok)}.sem.amarillo{background:#E0A526}.sem.rojo{background:var(--red)}
 .kgrid{display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin:.6rem 0 .3rem}@media (min-width:700px){.kgrid{grid-template-columns:repeat(3,1fr)}}
 .kc{display:flex;flex-direction:column;align-items:flex-start;gap:.15rem;text-align:left;background:var(--card);border:1px solid var(--line);border-top:4px solid #CBD5E1;border-radius:12px;padding:.75rem .85rem;min-height:6.6rem}
@@ -769,7 +770,6 @@ function bind() {
   document.querySelectorAll("[data-hy]").forEach(el => el.onclick = () => { histYear = el.dataset.hy; render(); });
   document.querySelectorAll("[data-he]").forEach(el => el.onclick = () => { histEst = el.dataset.he; render(); });
   document.querySelectorAll("[data-ey]").forEach(el => el.onclick = () => { evalYear = el.dataset.ey; render(); });
-  const ip = $("#ipc"); if (ip) ip.onchange = () => { store.set("portal_ipc_" + evalYear, ip.value); render(); };
   const lg = $("#login"); if (lg) lg.onsubmit = e => { e.preventDefault(); state.token = new FormData(lg).get("t").trim(); sessionStorage.setItem("portal_token", state.token); toast("Modo administración activado."); go(MODE === "simple" ? "inicio" : "panel"); };
   const lo = $("#logout"); if (lo) lo.onclick = () => { state.token = ""; sessionStorage.removeItem("portal_token"); render(); };
 }
@@ -822,7 +822,7 @@ function evaluacion() {
   const sd = DATA.sheets.EGRESOS_CAJA.filter(e => ids.includes(e.ID_Periodo) && e.Tipo_Egreso === "EGRESO SIN DETALLE DE COMPROBANTE").reduce((a, e) => a - n(e.Importe), 0);
   const est = DATA.sheets.GASTOS.filter(g => ids.includes(g.ID_Periodo) && g.Es_Estimado === "SI");
   const spend = C.withSpend.filter(id => inY(id.slice(-7))), l0 = spend.length ? n(C.P(spend[0]).Expensa_Ord_Lote_Tipo) : 0, l1 = spend.length ? n(C.P(spend[spend.length - 1]).Expensa_Ord_Lote_Tipo) : 0;
-  const ipc = parseFloat(String(store.get("portal_ipc_" + Y) || "").replace(",", ".")), varL = l0 ? l1 / l0 - 1 : null;
+  const varL = l0 ? l1 / l0 - 1 : null;
   const sem = (v, g, a) => v == null ? "gris" : v >= g ? "verde" : v >= a ? "amarillo" : "rojo", semInv = (v, g, a) => v == null ? "gris" : v <= g ? "verde" : v <= a ? "amarillo" : "rojo";
   const rows = [
     ["Problemas resueltos", hs.length ? `${res.length} de ${hs.length} (${pct(res.length / hs.length, false)})` : "Sin problemas registrados", sem(hs.length ? res.length / hs.length : null, .7, .4), "Verde: 70% o más resueltos. Amarillo: entre 40% y 70%."],
@@ -833,7 +833,7 @@ function evaluacion() {
     ["Liquidaciones con observaciones críticas", ids.length ? `${crit} de ${ids.length}` : "s/d", semInv(ids.length ? crit / ids.length : null, 0, .25), "Meses con al menos una observación crítica."],
     ["Pagos sin comprobante detallado", money(sd, 0), semInv(sd, 0, 1e6), "Plata que salió de la cuenta sin un gasto detallado en la liquidación."],
     ["Gastos cobrados como estimados", est.length ? `${est.length} (${money(est.reduce((a, g) => a + n(g.Importe), 0), 0)})` : "Ninguno", semInv(est.length, 0, 3), "Importes cobrados sin factura real."],
-    ["Variación de la expensa de un lote común", varL != null ? `${pct(varL)} (${label(spend[0])} a ${label(spend[spend.length - 1])})` : "s/d", isNaN(ipc) || varL == null ? "gris" : semInv(varL - ipc / 100, 0, .1), isNaN(ipc) ? "Escriba la inflación del período abajo para compararla." : `Comparada con una inflación de ${String(ipc).replace(".", ",")}% para el mismo período.`],
+    ["Variación de la expensa de un lote común", varL != null ? `${pct(varL)} (${label(spend[0])} a ${label(spend[spend.length - 1])})` : "s/d", "gris", "Dato informativo, sin semáforo."],
   ];
   const resumen = `Evaluación de la administración — ${bName()}, año ${Y} (indicadores del portal):\n` + rows.map(r => `• ${r[0]}: ${r[1]}`).join("\n") + `\n\nSon indicadores para orientar la decisión, no una conclusión. Fuente: liquidaciones cargadas y registro de problemas y reclamos.`;
   const years = [...new Set([...HS().map(h => String(h.Fecha_Alta || "").slice(0, 4)), ...C.ids.map(id => id.slice(-7, -3))].filter(Boolean))].sort();
@@ -841,7 +841,6 @@ function evaluacion() {
   <div class="intro"><b>¿Qué estoy viendo?</b> Indicadores del año para ${esc(bName())}, pensados para decidir en asamblea si se renueva a la administración. Cada uno dice cómo se calcula y qué se considera bien o mal. Son una ayuda para decidir, no un veredicto.</div>
   <div class="chips">${years.map(y => `<button data-ey="${y}" class="${y === Y ? "on" : ""}">${y}</button>`).join("")}</div>
   <div class="evl">${rows.map(r => `<div class="ev ${r[2]}"><span class="ev-dot"></span><div><b>${esc(r[0])}</b><small>${esc(r[3])}</small></div><span class="ev-v">${esc(r[1])}</span></div>`).join("")}</div>
-  <label class="fld">Inflación del período, en % (opcional)<input id="ipc" inputmode="decimal" value="${isNaN(ipc) ? "" : String(ipc).replace(".", ",")}" placeholder="Ej.: 12,5"></label>
   <p class="fine">Los meses cargados de ${Y} son ${ids.length}. La evaluación mejora a medida que se cargan más liquidaciones y se registran los problemas y sus soluciones.</p>
   <button class="btn" data-copy="${esc(resumen)}">${ico("copy")} Copiar el resumen para la asamblea</button>`;
 }
@@ -1409,7 +1408,7 @@ const mesOf = id => String(id).slice(-7);
 const m0 = v => money(v, 0);
 const compact = v => { const a = Math.abs(v), s = v < 0 ? "−" : ""; return a >= 1e6 ? `${s}$ ${(a / 1e6).toLocaleString("es-AR", { maximumFractionDigits: 2 })} M` : a >= 1e3 ? `${s}$ ${Math.round(a / 1e3).toLocaleString("es-AR")} mil` : `${s}$ ${Math.round(a)}`; };
 const pp = v => (v >= 0 ? "+" : "−") + Math.abs(v * 100).toLocaleString("es-AR", { maximumFractionDigits: 1 }) + " pp";
-const SEMT = { verde: "Normal", amarillo: "Revisar", rojo: "Posible inconsistencia", gris: "Sin dato" };
+const SEMT = { neutro: "Dato", verde: "Normal", amarillo: "Revisar", rojo: "Posible inconsistencia", gris: "Sin dato" };
 const semDot = s => `<span class="sem ${s}" title="${SEMT[s]}"></span>`;
 
 /* ---------- Inflación (INDEC) ---------- */
@@ -1423,6 +1422,8 @@ function infl(fromMes, toMes) {
   return { v: I[b] / I[a] - 1, hasta: b, parcial: b !== toMes || a !== fromMes };
 }
 const ipcMes = mes => { const I = ipcIdx(), [y, m] = mes.split("-").map(Number), p = `${m === 1 ? y - 1 : y}-${String(m === 1 ? 12 : m - 1).padStart(2, "0")}`; return I[mes] && I[p] ? I[mes] / I[p] - 1 : null; };
+/** Solo referencia: inflación mensual publicada por el INDEC para ese mes. No se compara con nada. */
+const ipcRef = mes => { const v = ipcMes(mes); return v != null ? `Inflación de ${label(mes)} (INDEC): ${pct(v, false)}` : `Inflación de ${label(mes)} (INDEC): aún no publicada`; };
 const inflTxt = r => r && r.v != null ? `${pct(r.v)}${r.parcial ? ` (INDEC publicado hasta ${label(r.hasta)})` : ""}` : "s/d";
 
 /* ---------- Agrupación de conceptos ---------- */
@@ -1467,7 +1468,7 @@ function detector(id) {
     const cur = r.v[id] || 0, prev = pv ? r.v[pv] || 0 : 0, share = cur / tg;
     const hist = M.ids.slice(0, ix + 1).map(k => r.v[k] || 0), st = statsOf(hist);
     if (pv && prev && cur) { const v = cur / prev - 1;
-      if (v > 0.3 && (share > 0.01 || cur - prev > 100000)) add(v > 0.5 ? "rojo" : "amarillo", "Aumento anormal", `${r.key} ${pct(v)}`, `Pasó de ${m0(prev)} a ${m0(cur)}${ipm != null ? `; la inflación del mes fue ${pct(ipm)}` : ""}.`, r.key);
+      if (v > 0.3 && (share > 0.01 || cur - prev > 100000)) add(v > 0.5 ? "rojo" : "amarillo", "Aumento anormal", `${r.key} ${pct(v)}`, `Pasó de ${m0(prev)} a ${m0(cur)}.`, r.key);
       else if (v < -0.3 && prev > 50000) add("amarillo", "Cambio brusco", `${r.key} ${pct(v)}`, `Pasó de ${m0(prev)} a ${m0(cur)}. Puede ser un mes con menos facturas o un cambio de servicio.`, r.key); }
     if (pv && !prev && cur) { const nunca = M.ids.slice(0, ix).every(k => !r.v[k]);
       add(share > 0.05 ? "rojo" : "amarillo", nunca ? "Concepto nuevo" : "Reaparece", `${r.key}${nunca ? " aparece por primera vez" : " vuelve a aparecer"}`, `${m0(cur)} (${pct(share, false)} del gasto del mes).${share > 0.05 && nunca ? " Es un gasto no habitual de peso." : ""}`, r.key); }
@@ -1486,19 +1487,15 @@ function observaciones(id) {
   const ix = C.withSpend.indexOf(id), cats = C.breakdown(id, "Categoria").filter(c => c.actual > 0), top = cats[0];
   if (top) o.push(`${Plain.cat(top.key).nombre} representa el ${pct(top.share, false)} del gasto total.`);
   const back = ix >= 3 ? C.withSpend[ix - 3] : ix >= 1 ? C.withSpend[0] : null;
-  if (back) { const nm = ix - C.withSpend.indexOf(back), inf = infl(mesOf(back), mesOf(id));
+  if (back) { const nm = ix - C.withSpend.indexOf(back);
     C.breakdown(id, "Categoria").forEach(c => { const a = c.actual, b = C.G(back).filter(g => g.Categoria === c.key).reduce((x, g) => x + n(g.Importe), 0);
-      if (a && b && Math.abs(a / b - 1) >= 0.15 && Math.max(a, b) > tg * 0.01) o.push(`${Plain.cat(c.key).nombre}: ${a > b ? "creció" : "bajó"} ${pct(Math.abs(a / b - 1), false)} en ${nm} ${nm === 1 ? "mes" : "meses"}${inf && inf.v != null ? ` (inflación: ${pct(inf.v)})` : ""}.`); }); }
-  const pv = C.prevOf(id), ipm = ipcMes(mesOf(id));
-  if (pv && ipm != null) { const above = C.breakdown(id, "Categoria").filter(c => c.actual && c.anterior && c.var > ipm + 0.02).map(c => Plain.cat(c.key).nombre);
-    if (above.length) o.push(`Subieron por encima de la inflación del mes (${pct(ipm)}): ${above.join(", ")}.`); }
+      if (a && b && Math.abs(a / b - 1) >= 0.15 && Math.max(a, b) > tg * 0.01) o.push(`${Plain.cat(c.key).nombre}: ${a > b ? "creció" : "bajó"} ${pct(Math.abs(a / b - 1), false)} en ${nm} ${nm === 1 ? "mes" : "meses"}.`); }); }
   const nr = C.G(id).filter(g => g.Naturaleza === "EVENTUAL / NO RECURRENTE" && n(g.Importe) > tg * 0.03);
   if (nr.length) o.push(`Se detectan gastos no habituales: ${nr.map(g => `${g.Concepto_Normalizado} (${m0(n(g.Importe))})`).join(", ")}.`);
   const first = C.withSpend[0], l0 = n(C.P(first).Expensa_Ord_Lote_Tipo), l1 = n(C.P(id).Expensa_Ord_Lote_Tipo);
-  if (first !== id && l0) { const inf = infl(mesOf(first), mesOf(id)); o.push(`La expensa de un lote común subió ${pct(l1 / l0 - 1, false)} desde ${label(first)}${inf && inf.v != null ? `; la inflación en el mismo período fue ${pct(inf.v)}` : ""}.`); }
+  if (first !== id && l0) o.push(`La expensa de un lote común ${l1 >= l0 ? "subió" : "bajó"} ${pct(Math.abs(l1 / l0 - 1), false)} desde ${label(first)}.`);
   const cob = cobertura(id); if (cob != null) o.push(`La plata en la cuenta alcanza para ${cob < 1 ? Math.round(cob * 30) + " días" : cob.toLocaleString("es-AR", { maximumFractionDigits: 1 }) + " meses"} de gastos al ritmo promedio.`);
   if (!n(C.P(id).Fondo_Reserva)) o.push("La liquidación no informa un fondo de reserva para imprevistos.");
-  const il = ipcLast(); if (il && il < mesOf(id)) o.push(`Inflación: IPC del INDEC, publicado hasta ${label(il)}; los meses posteriores se completan solos cuando el INDEC los publica.`);
   return o;
 }
 function cobertura(id) { const avg = C.withSpend.filter(x => x <= id).map(C.totalGastos).reduce((a, b, _, arr) => a + b / arr.length, 0); const caja = n(C.EV(id).Saldo_Caja_Final); return avg ? caja / avg : null; }
@@ -1509,7 +1506,7 @@ function panel() {
   if (tg <= 1) return `<h1>Panel de ${esc(bName())}</h1><div class="intro">${esc(C.narrative(id)[0])} Elija otro mes arriba.</div>`;
   const tgp = pv ? C.totalGastos(pv) : 0, base = n(p.Base_Prorrateo_Ord), lt = n(p.Expensa_Ord_Lote_Tipo), ltp = pv ? n(C.P(pv).Expensa_Ord_Lote_Tipo) : 0;
   const ev = C.EV(id), lotes = n(p.Cantidad_Unidades) || bLotes(), sup = n((DATA.sheets.BARRIOS.find(b => b.ID_Barrio === barrio) || {}).Superficie_m2);
-  const first = C.withSpend[0], l0 = n(C.P(first).Expensa_Ord_Lote_Tipo), infA = infl(mesOf(first), mesOf(id)), vAcum = l0 ? lt / l0 - 1 : null;
+  const first = C.withSpend[0], l0 = n(C.P(first).Expensa_Ord_Lote_Tipo), vAcum = l0 ? lt / l0 - 1 : null;
   const deuda = n(ev.Deudas_A_Cobrar) + n(ev.Intereses_A_Cobrar), ud = n(ev.Unidades_Con_Deuda), cob = cobertura(id);
   const extra = n(p.Gastos_Extraordinarios), noRec = n(ev.Gastos_No_Recurrentes);
   const sV = v => v == null ? "gris" : Math.abs(v) < 0.10 ? "verde" : Math.abs(v) < 0.20 ? "amarillo" : "rojo";
@@ -1520,7 +1517,7 @@ function panel() {
     ["Gasto total del mes", m0(tg), pv ? `${pct(C.varPct(tg, tgp))} vs ${MESC[+mesOf(pv).slice(5)]}` : "", sV(pv ? tg / tgp - 1 : null), "Suma de todos los gastos de la liquidación."],
     ["Pedido a los propietarios", m0(base), Math.abs(base - tg) > 1000 ? `${m0(base - tg)} más que lo gastado` : "Igual a lo gastado", Math.abs(base - tg) > 1000 ? "rojo" : "verde", "Lo que se repartió entre los lotes. Debería coincidir con el gasto del mes."],
     ["Expensa de un lote común", money(lt), pv ? `${pct(lt / ltp - 1)} vs mes anterior` : "", sV(pv ? lt / ltp - 1 : null), "Lote con el coeficiente más habitual del barrio."],
-    ["Expensa vs inflación", vAcum != null && first !== id ? pct(vAcum) : "s/d", infA && infA.v != null && first !== id ? `Inflación ${inflTxt(infA)} desde ${MESC[+mesOf(first).slice(5)]}` : "Sin datos de inflación", vAcum == null || !infA || infA.v == null || first === id ? "gris" : vAcum - infA.v <= 0.02 ? "verde" : vAcum - infA.v <= 0.10 ? "amarillo" : "rojo", "Compara cuánto subió la expensa con el IPC del INDEC en el mismo período."],
+    ["Suba acumulada de la expensa", vAcum != null && first !== id ? pct(vAcum) : "s/d", first !== id ? `Lote común, desde ${label(first)}` : "Un solo mes cargado", "neutro", "Cuánto cambió la expensa del lote común desde el primer mes cargado."],
     ["Variación anual", "s/d", "Disponible con 12 meses cargados", "gris", "Mismo mes del año anterior."],
     ["Gastos extraordinarios", m0(extra), noRec ? `Además, ${m0(noRec)} en gastos no habituales` : "Sin gastos no habituales", noRec > tg * 0.05 ? "amarillo" : "verde", "Extraordinarios declarados en la liquidación y gastos ordinarios poco frecuentes."],
     ["Fondo de reserva", n(p.Fondo_Reserva) ? m0(n(p.Fondo_Reserva)) : "No informado", "La liquidación no lo detalla", n(p.Fondo_Reserva) ? "verde" : "rojo", "Ahorro para imprevistos."],
@@ -1539,10 +1536,11 @@ function panel() {
   <p class="lead2">${esc(C.narrative(id).slice(0, 2).join(" "))}</p>
   <section class="kgrid">${K.map(k => `<button class="kc ${k[3]}" data-tip="${esc(k[4])}"><span class="kc-t">${semDot(k[3])}${esc(k[0])}</span><b>${esc(k[1])}</b><small>${esc(k[2])}</small></button>`).join("")}</section>
   <p class="fine">${semDot("verde")} Normal ${semDot("amarillo")} Revisar ${semDot("rojo")} Posible inconsistencia ${semDot("gris")} Sin dato. Toque una tarjeta para ver qué mide.</p>
+  <p class="fine ipcref">Referencia · ${esc(ipcRef(mesOf(id)))}</p>
   <section class="k2">${k2.map(k => `<div><span>${esc(k[0])}</span><b>${esc(k[1])}</b><small>${esc(k[2])}</small></div>`).join("")}</section>
   <div class="cols2">
     <section class="card"><h2>¿Por qué cambió el gasto?</h2><p class="fine">De ${pv ? label(pv) : "—"} a ${label(id)}, grupo por grupo. Verde: bajó. Rojo: subió.</p><div class="chart"><canvas id="ch-wf"></canvas></div></section>
-    <section class="card"><h2>Expensa vs inflación</h2><p class="fine">Lote común (barras) y cuánto valdría si hubiera subido igual que el IPC (línea).</p><div class="chart"><canvas id="ch-tr"></canvas></div></section>
+    <section class="card"><h2>Expensa de un lote común</h2><p class="fine">Mes por mes; el último mes en azul oscuro.</p><div class="chart"><canvas id="ch-tr"></canvas></div></section>
   </div>
   <section class="card"><div class="card-h"><h2>Observaciones automáticas</h2><span class="tag">Cálculo</span></div><ul class="obs">${observaciones(id).map(t => `<li>${esc(t)}</li>`).join("")}</ul></section>
   <section class="card"><div class="card-h"><h2>Detector de inconsistencias</h2><button class="link" data-goto="detector">Ver todo (${det.length})</button></div>
@@ -1572,11 +1570,9 @@ function waterfall(s, id) {
 }
 function trendVsIpc(s, id) {
   const el = $(s); if (!el) return; const ids = C.withSpend.filter(x => x <= id), v = ids.map(x => n(C.P(x).Expensa_Ord_Lote_Tipo));
-  const ipc = ids.map(x => { const r = infl(mesOf(ids[0]), mesOf(x)); return r && r.v != null ? v[0] * (1 + r.v) : null; });
   const o = opts(false);
   charts.push(new Chart(el, { data: { labels: ids.map(short), datasets: [
-    { type: "bar", label: "Expensa lote común", data: v, backgroundColor: ids.map((_, i) => i === ids.length - 1 ? "#13294B" : "#9FB3D1"), borderRadius: 4, order: 2 },
-    { type: "line", label: "Si hubiera seguido la inflación", data: ipc, borderColor: "#D4A017", backgroundColor: "#D4A017", borderWidth: 3, pointRadius: 3, spanGaps: true, order: 1 }] }, options: o }));
+    { type: "bar", label: "Expensa lote común", data: v, backgroundColor: ids.map((_, i) => i === ids.length - 1 ? "#13294B" : "#9FB3D1"), borderRadius: 4, order: 2 }] }, options: o }));
 }
 
 /* ---------- TABLA PRINCIPAL ---------- */
@@ -1623,25 +1619,24 @@ function conceptoV() {
   const M = matrix(), ids = M.ids, r = M.rows.find(x => x.key === ckey) || (() => { const rs = M.rows.filter(x => x.cat === ckey); return rs.length ? { key: Plain.cat(ckey).nombre, cat: ckey, v: Object.fromEntries(ids.map(id => [id, rs.reduce((a, x) => a + (x.v[id] || 0), 0)])), items: rs.flatMap(x => x.items) } : null; })();
   if (!r) return tabla();
   const v = seriesOf(r, ids), st = statsOf(v), lastId = ids[ids.length - 1], fi = v.findIndex(x => x), firstId = ids[fi];
-  const infAc = fi >= 0 ? infl(mesOf(firstId), mesOf(lastId)) : null, varAc = fi >= 0 && v[fi] ? st.last / v[fi] - 1 : null, ipm = ipcMes(mesOf(lastId));
+  const varAc = fi >= 0 && v[fi] ? st.last / v[fi] - 1 : null;
   const share = C.totalGastos(lastId) ? st.last / C.totalGastos(lastId) : 0;
   const obs = [];
-  if (st.varM != null) obs.push(`${r.key} ${st.varM >= 0 ? "aumentó" : "bajó"} ${pct(Math.abs(st.varM), false)} respecto del mes anterior${ipm != null ? `, ${st.varM > ipm ? "por encima" : "por debajo"} de la inflación del mes (${pct(ipm)})` : ""}.`);
-  if (varAc != null && firstId !== lastId) obs.push(`Desde ${label(firstId)} ${varAc >= 0 ? "subió" : "bajó"} ${pct(Math.abs(varAc), false)}${infAc && infAc.v != null ? `; la inflación fue ${inflTxt(infAc)}, ${varAc - infAc.v > 0 ? `${pp(varAc - infAc.v)} por encima` : `${pp(varAc - infAc.v)} respecto`} de ella` : ""}.`);
+  if (st.varM != null) obs.push(`${r.key} ${st.varM >= 0 ? "aumentó" : "bajó"} ${pct(Math.abs(st.varM), false)} respecto del mes anterior.`);
+  if (varAc != null && firstId !== lastId) obs.push(`Desde ${label(firstId)} ${varAc >= 0 ? "subió" : "bajó"} ${pct(Math.abs(varAc), false)}.`);
   if (st.n >= 3 && Math.abs(st.z) >= 1) obs.push(`El último mes está ${st.z > 0 ? "por encima" : "por debajo"} de lo habitual (${st.z.toFixed(1).replace(".", ",")} desvíos respecto del promedio).`);
   obs.push(`Representa el ${pct(share, false)} del gasto de ${label(lastId)}.`);
   if (v.some(x => !x)) obs.push(`No se cobró en ${v.filter(x => !x).length} de ${v.length} meses: ${ids.filter((_, i) => !v[i]).map(short).join(", ")}.`);
   const est = r.items.filter(g => g.Es_Estimado === "SI"); if (est.length) obs.push(`${est.length} ${est.length === 1 ? "vez se cobró" : "veces se cobró"} un importe estimado.`);
-  after.push(() => { const el = $("#ch-c"); if (!el) return; const ipc = ids.map((x, i) => { if (i < fi || fi < 0) return null; const q = infl(mesOf(firstId), mesOf(x)); return q && q.v != null ? v[fi] * (1 + q.v) : null; });
+  after.push(() => { const el = $("#ch-c"); if (!el) return; 
     charts.push(new Chart(el, { data: { labels: ids.map(short), datasets: [{ type: "bar", label: r.key, data: v, backgroundColor: v.map((x, i) => heat(x, i ? v[i - 1] : x)[0] === "fuerte" ? "#C0392B" : i === v.length - 1 ? "#13294B" : "#9FB3D1"), borderRadius: 4, order: 2 },
-      { type: "line", label: "Si hubiera seguido la inflación", data: ipc, borderColor: "#D4A017", backgroundColor: "#D4A017", borderWidth: 3, pointRadius: 3, spanGaps: true, order: 1 },
       { type: "line", label: "Promedio", data: v.map(() => st.mean), borderColor: "#94A3B8", borderDash: [6, 4], borderWidth: 2, pointRadius: 0, order: 0 }] }, options: opts(false) })); });
   const its = [...r.items].sort((a, b) => String(b.ID_Periodo).localeCompare(a.ID_Periodo));
   return `<button class="link back" data-goto="tabla">${ico("back")} Volver a la tabla</button>
   <div class="ph"><div><p class="eyebrow"><i class="dot" style="background:${Plain.cat(r.cat).color}"></i>${esc(Plain.cat(r.cat).nombre)} · ${esc(bName())}</p><h1>${esc(r.key)}</h1></div></div>
   ${Plain.cat(r.cat).txt ? `<p class="lead2">${esc(Plain.cat(r.cat).txt)}</p>` : ""}
-  <section class="k2">${[["Último mes", m0(st.last), label(lastId)], ["Variación mensual", st.varM == null ? "—" : pct(st.varM), ipm != null ? `Inflación del mes ${pct(ipm)}` : `IPC de ${label(mesOf(lastId))} aún no publicado`],
-    ["Variación acumulada", varAc == null || firstId === lastId ? "—" : pct(varAc), infAc && infAc.v != null ? `Inflación ${inflTxt(infAc)}` : ""], ["Variación anual", "s/d", "Con 12 meses cargados"],
+  <section class="k2">${[["Último mes", m0(st.last), label(lastId)], ["Variación mensual", st.varM == null ? "—" : pct(st.varM), "Respecto del mes anterior"],
+    ["Variación acumulada", varAc == null || firstId === lastId ? "—" : pct(varAc), firstId ? `Desde ${label(firstId)}` : ""], ["Variación anual", "s/d", "Con 12 meses cargados"],
     ["Promedio", m0(st.mean), `${ids.length} meses`], ["Máximo / mínimo", `${compact(st.max)} / ${compact(st.min)}`, `Desvío estándar ${m0(st.sd)}`]].map(k => `<div><span>${k[0]}</span><b>${esc(k[1])}</b><small>${esc(k[2])}</small></div>`).join("")}</section>
   <section class="card"><h2>Evolución mensual</h2><div class="chart"><canvas id="ch-c"></canvas></div></section>
   <section class="card"><div class="card-h"><h2>Observaciones automáticas</h2><span class="tag">Cálculo</span></div><ul class="obs">${obs.map(t => `<li>${esc(t)}</li>`).join("")}</ul></section>
@@ -1757,7 +1752,7 @@ function asistente() {
   <div class="intro"><b>¿Cómo funciona?</b> Responde con los datos cargados, usando cálculos fijos. No usa servicios pagos y no inventa: si un dato no está, lo dice.</div>
   <div class="chat">${chat.map(m => `<div class="msg ${m.who}">${m.html}</div>`).join("") || `<p class="empty">Escriba una pregunta o elija una de abajo.</p>`}</div>
   <form id="askf" class="askf"><input id="askq" placeholder="Ej.: ¿por qué aumentaron las expensas?" autocomplete="off"><button class="btn" type="submit">Preguntar</button></form>
-  <div class="chips wrap">${["¿Por qué aumentaron las expensas?", "¿Cuál es el gasto más importante?", "¿Qué conceptos subieron más?", "¿Hay errores?", "¿Subió más que la inflación?", "¿Cuánto deben los vecinos?", "¿Hay fondo de reserva?", "¿Cuánto cuesta la seguridad?", "¿Qué proveedor cobra más?"].map(q => `<button data-ask="${esc(q)}">${esc(q)}</button>`).join("")}</div>`;
+  <div class="chips wrap">${["¿Por qué aumentaron las expensas?", "¿Cuál es el gasto más importante?", "¿Qué conceptos subieron más?", "¿Hay errores?", "¿Cuál fue la inflación del mes?", "¿Cuánto deben los vecinos?", "¿Hay fondo de reserva?", "¿Cuánto cuesta la seguridad?", "¿Qué proveedor cobra más?"].map(q => `<button data-ask="${esc(q)}">${esc(q)}</button>`).join("")}</div>`;
 }
 function responder(q0) {
   const q = q0.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, ""), id = sel, pv = C.prevOf(id), tg = C.totalGastos(id);
@@ -1774,8 +1769,7 @@ function responder(q0) {
       ${up.length ? `<p>Lo que más empujó hacia arriba:</p>${li(up.map(c => `${Plain.cat(c.key).nombre}: +${m0(c.dif)}`))}` : ""}${dn.length ? `<p>Lo que bajó:</p>${li(dn.map(c => `${Plain.cat(c.key).nombre}: −${m0(-c.dif)}`))}` : ""}
       ${Math.abs(base - tg) > 1000 ? `<p><b>Atención:</b> a los lotes se les pidió ${m0(base)}, ${m0(base - tg)} más que lo gastado. Por eso la expensa ${lt > ltp && tg < tgp ? "subió aunque el gasto bajó" : "no sigue exactamente al gasto"}.</p>` : ""}`;
   }
-  if (/inflac|ipc/.test(q)) { const f = C.withSpend[0], l0 = n(C.P(f).Expensa_Ord_Lote_Tipo), r = infl(mesOf(f), mesOf(id)); if (!r || r.v == null) return "No hay datos de inflación para ese período.";
-    return `<p>Desde ${label(f)}, la expensa de un lote común subió <b>${pct(lt / l0 - 1)}</b> y la inflación (IPC del INDEC) fue <b>${inflTxt(r)}</b>: ${lt / l0 - 1 > r.v ? `${pp(lt / l0 - 1 - r.v)} <b>por encima</b>` : `${pp(lt / l0 - 1 - r.v)}, por debajo o igual`} de la inflación.</p>`; }
+  if (/inflac|ipc/.test(q)) return `<p>${esc(ipcRef(mesOf(id)))}.</p><p class="fine">Es un dato de referencia del INDEC. El portal no compara las expensas con la inflación.</p>`;
   if (/error|inconsist|revis|problema|duplic|mal/.test(q)) { const d = detector(id); return d.length ? `<p>El detector encontró ${d.filter(x => x.sev === "rojo").length} posibles inconsistencias y ${d.filter(x => x.sev !== "rojo").length} puntos para revisar en ${label(id)}:</p>${li(d.slice(0, 6).map(x => `<b>${esc(x.titulo)}</b>: ${esc(x.texto)}`))}<p class="fine">Son señales para revisar, no conclusiones.</p>` : "No se detectaron señales este mes."; }
   if (/mas importante|en que se gasta|mayor gasto|donde va/.test(q)) return `<p>En ${label(id)} el barrio gastó ${m0(tg)}. Lo que más pesa:</p>${li(cats.filter(c => c.actual).slice(0, 4).map(c => `${Plain.cat(c.key).nombre}: ${m0(c.actual)} (${pct(c.share, false)}) — en un lote común ≈ ${m0(C.perLote(id, c.actual))}`))}`;
   if (/subieron|subio mas|aumentaron mas|mayores aumentos/.test(q)) { const cs = C.breakdown(id, "Concepto_Normalizado").filter(r => r.actual && r.anterior); return pv ? `<p>Comparado con ${label(pv)}:</p>${li(cs.sort((a, b) => b.var - a.var).slice(0, 5).map(r => `${esc(r.key)}: ${pct(r.var)} (${m0(r.anterior)} → ${m0(r.actual)})`))}` : "No hay mes anterior para comparar."; }
@@ -1785,7 +1779,7 @@ function responder(q0) {
   if (prov) { const v = C.withSpend.map(x => C.G(x).filter(g => g.ID_Proveedor === prov.ID_Proveedor).reduce((a, g) => a + n(g.Importe), 0)); return `<p><b>${esc(prov.Proveedor)}</b> cobró ${m0(v[v.length - 1])} en ${label(C.withSpend[C.withSpend.length - 1])}. Mes a mes:</p>${li(C.withSpend.map((x, i) => `${labelCap(x)}: ${m0(v[i])}`))}`; }
   if (catMatch) { const r = catMatch; return `<p><b>${Plain.cat(r.key).nombre}</b> costó ${m0(r.actual)} en ${label(id)} (${pct(r.share, false)} del gasto${r.anterior ? `, ${pct(r.var)} contra el mes anterior` : ""}). En un lote común son unos ${m0(C.perLote(id, r.actual))}.</p><p class="fine">${esc(Plain.cat(r.key).txt)}</p><button class="link" data-ck="${esc(r.key)}">Ver el análisis completo ›</button>`; }
   if (/lote|pago|pagar|cuanto/.test(q)) return `<p>En ${label(id)} un lote común paga <b>${money(lt)}</b>${pv ? ` (${pct(lt / ltp - 1)} contra el mes anterior)` : ""}. Para su lote, use la sección Mi lote.</p>`;
-  return `<p>No tengo una respuesta armada para esa pregunta. Pruebe con: por qué aumentaron las expensas, cuál es el gasto más importante, qué subió más, si hay errores, inflación, deuda, fondo de reserva, o el nombre de un rubro o proveedor.</p>`;
+  return `<p>No tengo una respuesta armada para esa pregunta. Pruebe con: por qué aumentaron las expensas, cuál es el gasto más importante, qué subió más, si hay errores, deuda, fondo de reserva, o el nombre de un rubro o proveedor.</p>`;
 }
 function bindAsk() {
   document.querySelectorAll("[data-ask]").forEach(b => b.onclick = () => ask(b.dataset.ask));
@@ -1808,7 +1802,7 @@ function infSave(st) { store.set(infKey(), JSON.stringify(st)); }
 function infSecciones(id) {
   const p = C.P(id), pv = C.prevOf(id), tg = C.totalGastos(id), ev = C.EV(id), base = n(p.Base_Prorrateo_Ord);
   const lt = n(p.Expensa_Ord_Lote_Tipo), ltp = pv ? n(C.P(pv).Expensa_Ord_Lote_Tipo) : 0, tgp = pv ? C.totalGastos(pv) : 0;
-  const first = C.withSpend[0], l0 = n(C.P(first).Expensa_Ord_Lote_Tipo), infA = first !== id ? infl(mesOf(first), mesOf(id)) : null;
+  const first = C.withSpend[0], l0 = n(C.P(first).Expensa_Ord_Lote_Tipo);
   const lotes = n(p.Cantidad_Unidades) || bLotes(), deuda = n(ev.Deudas_A_Cobrar) + n(ev.Intereses_A_Cobrar), cob = cobertura(id);
   const it = (sec, t, x, on = true) => ({ k: sec + hsh(t + "|" + x), t, x, on });
   const S = [];
@@ -1816,14 +1810,15 @@ function infSecciones(id) {
     it("k", "Expensa de un lote común", `${money(lt)}${ltp ? ` (${pct(lt / ltp - 1)} respecto de ${label(pv)}: ${money(ltp)})` : ""}.`),
     it("k", "Gasto total del barrio", `${m0(tg)}${tgp ? ` (${pct(tg / tgp - 1)} respecto del mes anterior)` : ""}.`),
     it("k", "Lo que se pidió a los propietarios", Math.abs(base - tg) > 1000 ? `${m0(base)}: ${m0(base - tg)} ${base > tg ? "más" : "menos"} que lo gastado. La liquidación no lo explica.` : `${m0(base)}, igual a lo gastado.`),
-    ...(l0 && first !== id ? [it("k", "Expensa comparada con la inflación", `Desde ${label(first)} la expensa de un lote común subió ${pct(lt / l0 - 1, false)}${infA && infA.v != null ? `; la inflación (INDEC) fue ${inflTxt(infA)}` : ""}.`)] : []),
+    ...(l0 && first !== id ? [it("k", "Suba acumulada de la expensa", `El lote común ${lt >= l0 ? "subió" : "bajó"} ${pct(Math.abs(lt / l0 - 1), false)} desde ${label(first)}.`)] : []),
     it("k", "Plata en la cuenta", `${m0(n(ev.Saldo_Caja_Final))} al cierre${cob != null ? `, alcanza para ${cob < 1 ? Math.round(cob * 30) + " días" : cob.toLocaleString("es-AR", { maximumFractionDigits: 1 }) + " meses"} de gastos` : ""}.`),
     it("k", "Deuda de vecinos", `${m0(deuda)} (capital más intereses); ${n(ev.Unidades_Con_Deuda)} de ${lotes} lotes con deuda.`),
+    it("k", "Referencia", `${ipcRef(mesOf(id))}.`),
     it("k", "Fondo de reserva", n(p.Fondo_Reserva) ? `${m0(n(p.Fondo_Reserva))}.` : "La liquidación no lo informa."),
   ] });
   const det = detector(id);
   S.push({ id: "d", titulo: "Para consultar a la administración", nota: "Son indicadores de revisión: pueden tener explicación, por eso se consultan.", items: det.map(d => it("d", d.titulo, d.texto, d.sev === "rojo" || !/Concepto nuevo|Reaparece|Cambio brusco|Estimado/.test(d.tipo))) });
-  S.push({ id: "o", titulo: "Observaciones", items: observaciones(id).filter(o => !/^Inflación: IPC|^La expensa de un lote común subió|^La plata en la cuenta|^La liquidación no informa un fondo/.test(o)).map(o => it("o", "", o, true)) });
+  S.push({ id: "o", titulo: "Observaciones", items: observaciones(id).filter(o => !/^La expensa de un lote común (subió|bajó)|^La plata en la cuenta|^La liquidación no informa un fondo/.test(o)).map(o => it("o", "", o, true)) });
   const hs = HS().filter(h => String(h.Barrios || "").split(",").map(s => s.trim()).includes(barrio));
   const ab = hs.filter(h => !CERR(h)), so = hs.filter(h => h.Estado === "SOLUCIONADO");
   S.push({ id: "h", titulo: "Problemas que siguen abiertos", items: ab.map(h => it("h", h.Titulo, `${h.Conclusion_Simple || ""}${h.Estado ? ` Estado: ${String(h.Estado).toLowerCase()}.` : ""}`, h.Gravedad === "CRÍTICO")) });
